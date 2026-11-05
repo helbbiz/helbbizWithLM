@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { readFile } from 'node:fs/promises';
 
 const CHANNEL = 'helbbiz';
 const HELIX = 'https://api.twitch.tv/helix';
@@ -237,7 +238,49 @@ export function createApiServer() {
         sendJson(response, 200, schedule(), origin);
         return;
       }
-      sendJson(response, 404, { message: 'Not found.' }, origin);
+      if (route.startsWith('/api/')) {
+        sendJson(response, 404, { message: 'Not found.' }, origin);
+        return;
+      }
+
+      // Serve the built website from dist/ on the same Render service.
+      const requestedPath = decodeURIComponent(route === '/' ? '/index.html' : route);
+      const staticRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'dist');
+      const filePath = path.resolve(staticRoot, '.' + requestedPath);
+      if (filePath !== staticRoot && !filePath.startsWith(staticRoot + path.sep)) {
+        sendJson(response, 403, { message: 'Forbidden.' }, origin);
+        return;
+      }
+
+      try {
+        const body = await readFile(filePath);
+        const extension = path.extname(filePath).toLowerCase();
+        const contentTypes = {
+          '.html': 'text/html; charset=utf-8',
+          '.css': 'text/css; charset=utf-8',
+          '.js': 'text/javascript; charset=utf-8',
+          '.json': 'application/json; charset=utf-8',
+          '.svg': 'image/svg+xml',
+          '.png': 'image/png',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.webp': 'image/webp',
+          '.ico': 'image/x-icon',
+          '.txt': 'text/plain; charset=utf-8'
+        };
+        response.writeHead(200, {
+          'Content-Type': contentTypes[extension] || 'application/octet-stream',
+          'X-Content-Type-Options': 'nosniff',
+          'Cache-Control': extension === '.html' ? 'no-cache' : 'public, max-age=3600'
+        });
+        response.end(body);
+      } catch (fileError) {
+        if (fileError.code === 'ENOENT' || fileError.code === 'EISDIR') {
+          sendJson(response, 404, { message: 'File not found.' }, origin);
+        } else {
+          throw fileError;
+        }
+      }
     } catch (error) {
       const status = error instanceof TwitchApiError ? error.status : 502;
       console.error(`API request failed for ${route}:`, error);
