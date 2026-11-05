@@ -77,7 +77,3 @@ document.querySelectorAll('.comet').forEach((comet, index) => {
 });
 document.querySelectorAll('.satellite, .debris, .orbiter, .rock').forEach(object => object.remove());
 
-const featureScript = document.createElement('script');
-featureScript.src = 'features.js';
-featureScript.defer = true;
-document.body.append(featureScript);
